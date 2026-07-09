@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>황혼의 테트리스</title>
+<style>
+  :root{
+    --bg-top:#1a1440;
+    --bg-mid:#2b1a55;
+    --bg-bot:#4a2154;
+    --panel:#221a4acc;
+    --line:#453a7a;
+    --ink:#f3ecff;
+    --dim:#a99cd6;
+    --pink:#ff5fa2;
+    --cyan:#4dd7e8;
+    --amber:#ffc857;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    font-family:"Segoe UI","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    color:var(--ink);
+    background:linear-gradient(180deg,var(--bg-top) 0%,var(--bg-mid) 55%,var(--bg-bot) 100%);
+    min-height:100%;
+    display:flex;flex-direction:column;align-items:center;
+    padding:12px 10px 20px;
+    overflow-x:hidden;
+    touch-action:manipulation;
+  }
+  /* 해질녘 태양 - 시그니처 */
+  .sun{
+    position:fixed;left:50%;top:46%;transform:translate(-50%,-50%);
+    width:min(78vw,460px);height:min(78vw,460px);border-radius:50%;
+    background:radial-gradient(circle at 50% 38%, #ff9a5f 0%, #ff5fa2 45%, transparent 72%);
+    opacity:.16;filter:blur(6px);pointer-events:none;z-index:0;
+  }
+  h1{
+    font-size:clamp(20px,5vw,28px);
+    letter-spacing:.35em;text-indent:.35em;
+    font-weight:800;margin:4px 0 2px;z-index:1;
+    background:linear-gradient(90deg,var(--cyan),var(--pink) 60%,var(--amber));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .sub{font-size:11px;color:var(--dim);letter-spacing:.5em;text-indent:.5em;margin-bottom:10px;z-index:1}
+
+  .stage{display:flex;gap:12px;align-items:flex-start;z-index:1}
+  .boardWrap{
+    position:relative;border:1px solid var(--line);border-radius:10px;
+    background:var(--panel);padding:8px;
+    box-shadow:0 0 34px #ff5fa233,0 0 80px #4dd7e81c;
+    backdrop-filter:blur(3px);
+  }
+  canvas{display:block;border-radius:4px}
+  #board{background:#120d2e}
+
+  .side{display:flex;flex-direction:column;gap:10px;width:112px}
+  .card{
+    border:1px solid var(--line);border-radius:10px;background:var(--panel);
+    padding:8px 10px;backdrop-filter:blur(3px);
+  }
+  .card .label{font-size:10px;color:var(--dim);letter-spacing:.2em;margin-bottom:4px}
+  .card .val{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+  #score.val{color:var(--amber)}
+  #next{background:#120d2e;border-radius:4px;width:100%;height:auto}
+  .keys{font-size:10.5px;color:var(--dim);line-height:1.7}
+  .keys b{color:var(--ink);font-weight:600}
+
+  /* 오버레이 */
+  .overlay{
+    position:absolute;inset:0;border-radius:10px;
+    background:#120d2eea;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;text-align:center;z-index:5;
+  }
+  .overlay h2{font-size:22px;letter-spacing:.2em;text-indent:.2em}
+  .overlay p{font-size:13px;color:var(--dim);line-height:1.8}
+  .overlay .final{font-size:30px;font-weight:800;color:var(--amber)}
+  .btn{
+    border:1px solid var(--pink);color:var(--ink);background:#ff5fa21e;
+    font-size:15px;font-weight:700;letter-spacing:.15em;text-indent:.15em;
+    padding:12px 34px;border-radius:999px;cursor:pointer;
+    box-shadow:0 0 18px #ff5fa244;
+  }
+  .btn:active{transform:scale(.96)}
+  .hidden{display:none !important}
+
+  /* 터치 컨트롤 */
+  .pad{
+    display:none;margin-top:14px;z-index:1;
+    grid-template-columns:repeat(4,64px);gap:10px;
+  }
+  .pad button{
+    height:58px;border-radius:14px;border:1px solid var(--line);
+    background:#221a4add;color:var(--ink);font-size:22px;
+    touch-action:none;user-select:none;
+    box-shadow:0 3px 0 #120d2e;
+  }
+  .pad button:active{transform:translateY(2px);box-shadow:0 1px 0 #120d2e;background:#332866}
+  .pad .wide{grid-column:span 2;font-size:15px;font-weight:700;letter-spacing:.1em}
+  @media (hover:none) and (pointer:coarse){ .pad{display:grid} .keys{display:none} }
+</style>
+</head>
+<body>
+<div class="sun"></div>
+<h1>TETRIS</h1>
+<div class="sub">황혼의 테트리스</div>
+
+<div class="stage">
+  <div class="boardWrap">
+    <canvas id="board" width="300" height="600"></canvas>
+
+    <div class="overlay" id="startOv">
+      <h2>READY</h2>
+      <p>줄을 가득 채우면 사라집니다<br>레벨이 오르면 점점 빨라져요</p>
+      <button class="btn" id="startBtn">시작하기</button>
+    </div>
+
+    <div class="overlay hidden" id="pauseOv">
+      <h2>PAUSE</h2>
+      <button class="btn" id="resumeBtn">계속하기</button>
+    </div>
+
+    <div class="overlay hidden" id="overOv">
+      <h2>GAME OVER</h2>
+      <div class="final" id="finalScore">0</div>
+      <p id="bestLine">최고 기록 0</p>
+      <button class="btn" id="retryBtn">다시 도전</button>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="card">
+      <div class="label">다음 블록</div>
+      <canvas id="next" width="96" height="96"></canvas>
+    </div>
+    <div class="card"><div class="label">점수</div><div class="val" id="score">0</div></div>
+    <div class="card"><div class="label">줄</div><div class="val" id="lines">0</div></div>
+    <div class="card"><div class="label">레벨</div><div class="val" id="level">1</div></div>
+    <div class="card keys">
+      <b>◀ ▶</b> 이동<br>
+      <b>▲</b> 회전<br>
+      <b>▼</b> 빠르게<br>
+      <b>스페이스</b> 즉시 낙하<br>
+      <b>P</b> 일시정지
+    </div>
+  </div>
+</div>
+
+<div class="pad" id="pad">
+  <button id="pLeft">◀</button>
+  <button id="pRot">⟳</button>
+  <button id="pRight">▶</button>
+  <button id="pDown">▼</button>
+  <button class="wide" id="pDrop">즉시 낙하</button>
+  <button class="wide" id="pPause">일시정지</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const COLS=10, ROWS=20, CELL=30;
+  const cvs=document.getElementById("board"), ctx=cvs.getContext("2d");
+  const ncv=document.getElementById("next"), nctx=ncv.getContext("2d");
+
+  const COLORS={I:"#4dd7e8",O:"#ffc857",T:"#ff5fa2",S:"#6ee7a0",Z:"#ff7a6e",J:"#6e8bff",L:"#ffa04d"};
+  const SHAPES={
+    I:[[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+    O:[[1,1],[1,1]],
+    T:[[0,1,0],[1,1,1],[0,0,0]],
+    S:[[0,1,1],[1,1,0],[0,0,0]],
+    Z:[[1,1,0],[0,1,1],[0,0,0]],
+    J:[[1,0,0],[1,1,1],[0,0,0]],
+    L:[[0,0,1],[1,1,1],[0,0,0]]
+  };
+
+  let grid, cur, next, bag=[];
+  let score=0, lines=0, level=1, best=0;
+  let dropTimer=0, lastTime=0, playing=false, paused=false, clearing=null;
+
+  const $=id=>document.getElementById(id);
+
+  function newGrid(){ return Array.from({length:ROWS},()=>Array(COLS).fill(null)); }
+
+  function fromBag(){
+    if(bag.length===0){
+      bag=["I","O","T","S","Z","J","L"];
+      for(let i=bag.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[bag[i],bag[j]]=[bag[j],bag[i]];}
+    }
+    const t=bag.pop();
+    const shape=SHAPES[t].map(r=>r.slice());
+    return {t, shape, x:Math.floor((COLS-shape[0].length)/2), y:-1};
+  }
+
+  function collides(p,dx,dy,shape){
+    shape=shape||p.shape;
+    for(let y=0;y<shape.length;y++)for(let x=0;x<shape[y].length;x++){
+      if(!shape[y][x])continue;
+      const nx=p.x+x+dx, ny=p.y+y+dy;
+      if(nx<0||nx>=COLS||ny>=ROWS)return true;
+      if(ny>=0&&grid[ny][nx])return true;
+    }
+    return false;
+  }
+
+  function rotate(p){
+    const s=p.shape, n=s.length;
+    const r=Array.from({length:n},(_,y)=>Array.from({length:n},(_,x)=>s[n-1-x][y]));
+    for(const k of [0,-1,1,-2,2]){
+      if(!collides(p,k,0,r)){p.shape=r;p.x+=k;return;}
+    }
+  }
+
+  function merge(){
+    cur.shape.forEach((row,y)=>row.forEach((v,x)=>{
+      if(v&&cur.y+y>=0) grid[cur.y+y][cur.x+x]=COLORS[cur.t];
+    }));
+  }
+
+  function findFull(){
+    const full=[];
+    for(let y=0;y<ROWS;y++) if(grid[y].every(c=>c)) full.push(y);
+    return full;
+  }
+
+  function scoreFor(n){ return [0,100,300,500,800][n]*level; }
+
+  function afterClear(full){
+    full.forEach(y=>{grid.splice(y,1);grid.unshift(Array(COLS).fill(null));});
+    lines+=full.length;
+    score+=scoreFor(full.length);
+    level=Math.floor(lines/10)+1;
+    updateHUD();
+  }
+
+  function lock(){
+    merge();
+    const full=findFull();
+    if(full.length){
+      clearing={rows:full,until:performance.now()+140};
+    }else{
+      spawn();
+    }
+  }
+
+  function spawn(){
+    cur=next; next=fromBag();
+    if(collides(cur,0,0)){ gameOver(); return; }
+    drawNext();
+  }
+
+  function gameOver(){
+    playing=false;
+    best=Math.max(best,score);
+    $("finalScore").textContent=score.toLocaleString();
+    $("bestLine").textContent="이번 세션 최고 기록 "+best.toLocaleString();
+    $("overOv").classList.remove("hidden");
+  }
+
+  function hardDrop(){
+    if(!ready())return;
+    let d=0;
+    while(!collides(cur,0,d+1))d++;
+    cur.y+=d; score+=d*2; updateHUD(); lock();
+  }
+
+  function softDrop(){
+    if(!ready())return;
+    if(!collides(cur,0,1)){cur.y++;score+=1;updateHUD();}
+    else lock();
+    dropTimer=0;
+  }
+
+  function move(dx){ if(ready()&&!collides(cur,dx,0))cur.x+=dx; }
+  function doRotate(){ if(ready())rotate(cur); }
+  function ready(){ return playing&&!paused&&!clearing; }
+
+  function dropInterval(){ return Math.max(90, 800-(level-1)*70); }
+
+  function ghostY(){
+    let d=0; while(!collides(cur,0,d+1))d++; return cur.y+d;
+  }
+
+  function cell(c,x,y,color,ghost){
+    const px=x*CELL, py=y*CELL;
+    if(ghost){
+      c.strokeStyle=color+"55"; c.lineWidth=1.5;
+      c.strokeRect(px+2.5,py+2.5,CELL-5,CELL-5);
+      return;
+    }
+    c.fillStyle=color;
+    c.fillRect(px+1,py+1,CELL-2,CELL-2);
+    c.fillStyle="#ffffff2e";
+    c.fillRect(px+1,py+1,CELL-2,6);
+    c.fillStyle="#00000030";
+    c.fillRect(px+1,py+CELL-6,CELL-2,5);
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,cvs.width,cvs.height);
+    // 은은한 격자
+    ctx.strokeStyle="#ffffff08";
+    for(let x=1;x<COLS;x++){ctx.beginPath();ctx.moveTo(x*CELL,0);ctx.lineTo(x*CELL,ROWS*CELL);ctx.stroke();}
+    for(let y=1;y<ROWS;y++){ctx.beginPath();ctx.moveTo(0,y*CELL);ctx.lineTo(COLS*CELL,y*CELL);ctx.stroke();}
+    // 쌓인 블록
+    for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+      if(grid[y][x]) cell(ctx,x,y,grid[y][x]);
+    }
+    // 줄 삭제 플래시
+    if(clearing){
+      ctx.fillStyle="#ffffffd9";
+      clearing.rows.forEach(y=>ctx.fillRect(0,y*CELL,COLS*CELL,CELL));
+    }
+    // 고스트 + 현재 블록
+    if(playing&&cur&&!clearing){
+      const gy=ghostY();
+      cur.shape.forEach((row,y)=>row.forEach((v,x)=>{
+        if(v&&gy+y>=0) cell(ctx,cur.x+x,gy+y,COLORS[cur.t],true);
+      }));
+      cur.shape.forEach((row,y)=>row.forEach((v,x)=>{
+        if(v&&cur.y+y>=0) cell(ctx,cur.x+x,cur.y+y,COLORS[cur.t]);
+      }));
+    }
+  }
+
+  function drawNext(){
+    nctx.clearRect(0,0,ncv.width,ncv.height);
+    const s=next.shape, n=s.length, u=n===2?30:22;
+    const w=s[0].length*u, h=s.length*u;
+    const ox=(ncv.width-w)/2, oy=(ncv.height-h)/2;
+    s.forEach((row,y)=>row.forEach((v,x)=>{
+      if(!v)return;
+      const px=ox+x*u, py=oy+y*u;
+      nctx.fillStyle=COLORS[next.t];
+      nctx.fillRect(px+1,py+1,u-2,u-2);
+      nctx.fillStyle="#ffffff2e";
+      nctx.fillRect(px+1,py+1,u-2,4);
+    }));
+  }
+
+  function updateHUD(){
+    $("score").textContent=score.toLocaleString();
+    $("lines").textContent=lines;
+    $("level").textContent=level;
+  }
+
+  function loop(t){
+    const dt=t-lastTime; lastTime=t;
+    if(playing&&!paused){
+      if(clearing){
+        if(t>=clearing.until){ afterClear(clearing.rows); clearing=null; spawn(); }
+      }else{
+        dropTimer+=dt;
+        if(dropTimer>dropInterval()){
+          dropTimer=0;
+          if(!collides(cur,0,1))cur.y++;
+          else lock();
+        }
+      }
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function start(){
+    grid=newGrid(); bag=[];
+    score=0;lines=0;level=1;dropTimer=0;clearing=null;
+    next=fromBag(); spawn();
+    updateHUD();
+    playing=true;paused=false;
+    $("startOv").classList.add("hidden");
+    $("overOv").classList.add("hidden");
+    $("pauseOv").classList.add("hidden");
+  }
+
+  function togglePause(){
+    if(!playing)return;
+    paused=!paused;
+    $("pauseOv").classList.toggle("hidden",!paused);
+  }
+
+  // 키보드
+  document.addEventListener("keydown",e=>{
+    if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key))e.preventDefault();
+    if(e.key==="ArrowLeft")move(-1);
+    else if(e.key==="ArrowRight")move(1);
+    else if(e.key==="ArrowUp")doRotate();
+    else if(e.key==="ArrowDown")softDrop();
+    else if(e.key===" ")hardDrop();
+    else if(e.key==="p"||e.key==="P"||e.key==="ㅔ")togglePause();
+  });
+
+  // 터치 버튼 (누르고 있으면 반복)
+  function bindHold(id,fn){
+    const el=$(id);let iv=null;
+    el.addEventListener("pointerdown",e=>{
+      e.preventDefault();fn();
+      iv=setInterval(fn,110);
+    });
+    ["pointerup","pointerleave","pointercancel"].forEach(ev=>
+      el.addEventListener(ev,()=>{clearInterval(iv);iv=null;}));
+  }
+  bindHold("pLeft",()=>move(-1));
+  bindHold("pRight",()=>move(1));
+  bindHold("pDown",softDrop);
+  $("pRot").addEventListener("pointerdown",e=>{e.preventDefault();doRotate();});
+  $("pDrop").addEventListener("pointerdown",e=>{e.preventDefault();hardDrop();});
+  $("pPause").addEventListener("pointerdown",e=>{e.preventDefault();togglePause();});
+
+  $("startBtn").addEventListener("click",start);
+  $("retryBtn").addEventListener("click",start);
+  $("resumeBtn").addEventListener("click",togglePause);
+
+  requestAnimationFrame(t=>{lastTime=t;requestAnimationFrame(loop);});
+  draw();
+})();
+</script>
+</body>
+</html>
